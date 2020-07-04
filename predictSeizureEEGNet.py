@@ -7,47 +7,135 @@ import pandas as pd
 import numpy as np
 import numpy.random as random
 from os import path
-from keras import backend as K
 
 # from multiprocessing import Process
-import constants
-import util_funcs
 import functools
 from sklearn.metrics import f1_score, make_scorer, accuracy_score, roc_auc_score, matthews_corrcoef, classification_report, log_loss, confusion_matrix, mean_squared_error
 
 import sacred
-import keras
 
 import random
 import string
-from keras.callbacks import ModelCheckpoint, EarlyStopping, LearningRateScheduler
-from keras.utils import multi_gpu_model
+from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, LearningRateScheduler
+
 from time import time
+import h5py
+import tensorflow.keras as keras
+from tensorflow.keras.utils import to_categorical
+
+from eegmodels import EEGNet, ShallowConvNet, DeepConvNet
 
 from addict import Dict
+from tensorflow.keras.optimizers import Adam
 ex = sacred.Experiment(name="seizure_baseline_eegnet_etc")
 
 @ex.capture
-def dataSource():
+def trainDataSource(train_val_hd5_location):
+    with h5py.File(train_val_hd5_location) as trainFile:
+        train_x = trainFile['train_x'].value
+        train_x = train_x.transpose(0,2,1).reshape((-1,1,22,1000))
+        train_y = trainFile['train_y'].value
+        return train_x, to_categorical(train_y, 4)
     
+@ex.capture
+def validDataSource(train_val_hd5_location):
+    with h5py.File(train_val_hd5_location) as trainFile:
+        train_x = trainFile['val_x'].value
+        train_x = train_x.transpose(0,2,1).reshape((-1,1,22,1000))
+        train_y = trainFile['val_y'].value
+        return train_x, to_categorical(train_y, 4)
+    
+@ex.capture
+def testDataSource(test_hd5_location):
+    with h5py.File(test_hd5_location) as testFile:
+        x = testFile['test_x'].value
+        x = x.transpose(0,2,1).reshape((-1,1,22,1000))
+        y = testFile['test_y'].value
+        return x, to_categorical(y, 4)
+    
+def randomString(stringLength=16):
+    """Generate a random string of fixed length """
+    letters = string.ascii_uppercase
+    return ''.join(random.choice(letters) for i in range(stringLength))
 
 @ex.config
 def config():
-    num_channels = 21
-    time_steps = 400
+    num_channels = 22
+    time_steps = 1000
+    nb_classes = 4
     train_val_hd5_location= "/datadrive/TUH_EEG/MUPS/data/cross_sub_TUH_EEG/cross_subject_data_train_val.hdf5"
     test_hd5_location = "/datadrive/TUH_EEG/MUPS/data/cross_sub_TUH_EEG/cross_subject_data_test.hdf5"
-    model_name = "eeg_net_original
+    model_type = "eegnet"
+    lr = 0.0001
+    patience = 20
+    num_epochs = 200
+    batch_size=16
+    early_stopping_on = "val_loss"
+    model_name = "/home/mohammed/" + randomString() + ".h5" #set to rando string so we don't have to worry about collisions
+
+@ex.named_config
+def debug():
+    patience = 1
+    num_epochs = 1
     
 @ex.capture
-def return_model(model_name, num_channels, time_steps):
+def return_model(model_type, nb_classes, num_channels, time_steps):
+    if model_type == "eegnet":
+        return EEGNet(nb_classes = nb_classes, Chans = num_channels, Samples = time_steps)
+    elif model_type == "shallow_eegnet":
+        return ShallowConvNet(nb_classes = nb_classes, Chans = num_channels, Samples = time_steps)
+    elif model_type == "deep_eegnet":
+        return DeepConvNet(nb_classes = nb_classes, Chans = num_channels, Samples = time_steps)
+    else:
+        raise Exception(f"bad model type: {model_type}")
+        
+@ex.capture
+def return_compiled_model(lr):
+    model = return_model()
+    model.compile(loss="categorical_crossentropy", optimizer=Adam(lr=lr))
+    model.summary()
+    return model
+
+@ex.capture
+def get_model_checkpoint(model_name, early_stopping_on):
+    return ModelCheckpoint(model_name, monitor=early_stopping_on, save_best_only=True, verbose=1)
+
+
+@ex.capture
+def get_early_stopping(patience, early_stopping_on):
+    return EarlyStopping(patience=patience, verbose=1, monitor=early_stopping_on)
+
+@ex.capture
+def get_cb_list():
+    return [get_model_checkpoint(), get_early_stopping()]
     
+@ex.capture
+def load_best_model(model_name):
+    return keras.models.load_model(model_name)
+
 @ex.main
-def main():
-    print("hello world")
-    edg, valid_edg, test_edg, len_all_patients = get_data_generators()
-    model = lstm_model()
+def main(batch_size, num_epochs):
+    keras.backend.set_image_data_format("channels_first")
+    model = return_compiled_model()
+    train_x, train_y = trainDataSource()
+    valid_x, valid_y = validDataSource()
+    history = model.fit(train_x, train_y, batch_size=batch_size, epochs=num_epochs, validation_data=([valid_x], valid_y), callbacks=get_cb_list())
+    history = history.history
+    results = Dict()
+    results.history = history
+    test_x, test_y = testDataSource()
+    
+    model = load_best_model()
+    val_predictions = model.predict(valid_x, batch_size=64)
+
+    results.valid_classification_report = classification_report(valid_y.argmax(1), val_predictions.argmax(1), output_dict=True)
+    results.valid_confustion_matrix = confusion_matrix(valid_y.argmax(1), val_predictions.argmax(1))
+    
+    predictions = model.predict(test_x, batch_size=64)
+    results.classification_report = classification_report(test_y.argmax(1), predictions.argmax(1), output_dict=True)
+    results.confustion_matrix = confusion_matrix(test_y.argmax(1), predictions.argmax(1))
+    return results.to_dict()
 
 
 if __name__ == "__main__":
-    ex_lstm.run_commandline()
+    ex.run_commandline()
