@@ -74,6 +74,7 @@ def config():
     batch_size=16
     early_stopping_on = "val_loss"
     model_name = "/home/mohammed/" + randomString() + ".h5" #set to rando string so we don't have to worry about collisions
+    verbose = 2
 
 @ex.named_config
 def debug():
@@ -116,12 +117,12 @@ def load_best_model(model_name):
     return keras.models.load_model(model_name)
 
 @ex.main
-def main(batch_size, num_epochs):
+def main(batch_size, num_epochs, verbose):
     keras.backend.set_image_data_format("channels_first")
     model = return_compiled_model()
     train_x, train_y = trainDataSource()
     valid_x, valid_y = validDataSource()
-    history = model.fit(train_x, train_y, batch_size=batch_size, epochs=num_epochs, validation_data=([valid_x], valid_y), callbacks=get_cb_list())
+    history = model.fit(train_x, train_y, batch_size=batch_size, epochs=num_epochs, validation_data=([valid_x], valid_y), callbacks=get_cb_list(), verbose=verbose, shuffle=True)
     history = history.history
     results = Dict()
     results.history = history
