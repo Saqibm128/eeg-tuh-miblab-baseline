@@ -13,7 +13,8 @@ import functools
 from sklearn.metrics import f1_score, make_scorer, accuracy_score, roc_auc_score, matthews_corrcoef, classification_report, log_loss, confusion_matrix, mean_squared_error
 
 import sacred
-
+from sacred.observers import MongoObserver
+import util_funcs
 import random
 import string
 from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, LearningRateScheduler
@@ -28,6 +29,7 @@ from eegmodels import EEGNet, ShallowConvNet, DeepConvNet
 from addict import Dict
 from tensorflow.keras.optimizers import Adam
 ex = sacred.Experiment(name="seizure_baseline_eegnet_etc")
+ex.observers.append(MongoObserver.create(client=util_funcs.get_mongo_client()))
 
 @ex.capture
 def trainDataSource(train_val_hd5_location):
@@ -128,12 +130,27 @@ def main(batch_size, num_epochs):
     model = load_best_model()
     val_predictions = model.predict(valid_x, batch_size=64)
 
-    results.valid_classification_report = classification_report(valid_y.argmax(1), val_predictions.argmax(1), output_dict=True)
-    results.valid_confustion_matrix = confusion_matrix(valid_y.argmax(1), val_predictions.argmax(1))
+    results.valid.classification_report = classification_report(valid_y.argmax(1), val_predictions.argmax(1), output_dict=True)
+    results.valid.confustion_matrix = confusion_matrix(valid_y.argmax(1), val_predictions.argmax(1))
+    results.valid.f1_score.macro =  f1_score(valid_y.argmax(1), val_predictions.argmax(1), average="macro")
+    results.valid.f1_score.micro =  f1_score(valid_y.argmax(1), val_predictions.argmax(1), average="micro")
+    results.valid.f1_score.weighted =  f1_score(valid_y.argmax(1), val_predictions.argmax(1), average="weighted")
     
-    predictions = model.predict(test_x, batch_size=64)
-    results.classification_report = classification_report(test_y.argmax(1), predictions.argmax(1), output_dict=True)
-    results.confustion_matrix = confusion_matrix(test_y.argmax(1), predictions.argmax(1))
+
+
+    train_predictions = model.predict(train_x, batch_size=64)
+    results.train.classification_report = classification_report(train_y.argmax(1), train_predictions.argmax(1), output_dict=True)
+    results.train.confustion_matrix = confusion_matrix(train_y.argmax(1), train_predictions.argmax(1))
+    results.train.f1_score.macro =  f1_score(train_y.argmax(1), train_predictions.argmax(1), average="macro")
+    results.train.f1_score.micro =  f1_score(train_y.argmax(1), train_predictions.argmax(1), average="micro")
+    results.train.f1_score.weighted =  f1_score(train_y.argmax(1), train_predictions.argmax(1), average="weighted")
+    
+    test_predictions = model.predict(test_x, batch_size=64)
+    results.test.classification_report = classification_report(test_y.argmax(1), test_predictions.argmax(1), output_dict=True)
+    results.test.confustion_matrix = confusion_matrix(test_y.argmax(1), test_predictions.argmax(1))
+    results.test.f1_score.macro =  f1_score(test_y.argmax(1), test_predictions.argmax(1), average="macro")
+    results.test.f1_score.micro =  f1_score(test_y.argmax(1), test_predictions.argmax(1), average="micro")
+    results.test.f1_score.weighted =  f1_score(test_y.argmax(1), test_predictions.argmax(1), average="weighted")
     return results.to_dict()
 
 
