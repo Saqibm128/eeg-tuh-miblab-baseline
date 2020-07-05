@@ -25,7 +25,7 @@ import tensorflow.keras as keras
 from tensorflow.keras.utils import to_categorical
 
 from eegmodels import EEGNet, ShallowConvNet, DeepConvNet
-
+from dataGen import EdfDataGenerator, RandomRearrangeBatchGenerator
 from addict import Dict
 from tensorflow.keras.optimizers import Adam
 ex = sacred.Experiment(name="seizure_baseline_eegnet_etc")
@@ -38,6 +38,9 @@ def trainDataSource(train_val_hd5_location):
         train_x = train_x.transpose(0,2,1).reshape((-1,1,22,1000))
         train_y = trainFile['train_y'].value
         return train_x, to_categorical(train_y, 4)
+    
+
+    
     
 @ex.capture
 def validDataSource(train_val_hd5_location):
@@ -74,6 +77,7 @@ def config():
     batch_size=16
     early_stopping_on = "val_loss"
     model_name = "/home/mohammed/" + randomString() + ".h5" #set to rando string so we don't have to worry about collisions
+    random_rearrange_each_batch = False
     verbose = 2
 
 @ex.named_config
@@ -116,13 +120,35 @@ def get_cb_list():
 def load_best_model(model_name):
     return keras.models.load_model(model_name)
 
+@ex.capture
+def train_generator(batch_size, random_rearrange_each_batch):
+    dataset = trainDataSource()
+    xData, yData = dataset
+    yData = yData.argmax(1)
+    dataset = (xData, yData)
+    if not random_rearrange_each_batch:
+        return non_random_generator(dataset)
+    else:
+        return RandomRearrangeBatchGenerator(non_random_generator(dataset), axis=2)
+
+@ex.capture
+def valid_generator(batch_size):
+    dataset = validDataSource()
+    xData, yData = dataset
+    yData = yData.argmax(1)
+    return non_random_generator((xData, yData))
+@ex.capture
+def non_random_generator(dataset, batch_size, nb_classes):
+    return EdfDataGenerator(dataset, n_classes=nb_classes, precache=True, use_three_dim_pad=False, xy_tuple_form=False, batch_size=batch_size)
 @ex.main
 def main(batch_size, num_epochs, verbose):
     keras.backend.set_image_data_format("channels_first")
     model = return_compiled_model()
     train_x, train_y = trainDataSource()
     valid_x, valid_y = validDataSource()
-    history = model.fit(train_x, train_y, batch_size=batch_size, epochs=num_epochs, validation_data=([valid_x], valid_y), callbacks=get_cb_list(), verbose=verbose, shuffle=True)
+    train_data_generator = train_generator()
+    valid_data_generator = valid_generator()
+    history = model.fit_generator(train_data_generator, epochs=num_epochs, validation_data=valid_data_generator, steps_per_epoch=len(train_data_generator), validation_steps=len(valid_data_generator), callbacks=get_cb_list(), verbose=verbose, shuffle=True)
     history = history.history
     results = Dict()
     results.history = history

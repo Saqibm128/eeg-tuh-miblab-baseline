@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 
-for lr in  0.001 0.0001 0.0005 0.00001
+for lr in  0.001 0.0001 0.00001 0.000005
 do
     for model_type in eegnet shallow_eegnet deep_eegnet
     do
