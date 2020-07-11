@@ -68,8 +68,8 @@ def config():
     num_channels = 22
     time_steps = 1000
     nb_classes = 4
-    train_val_hd5_location= "/datadrive/TUH_EEG/MUPS/data/cross_sub_TUH_EEG/cross_subject_data_train_val.hdf5"
-    test_hd5_location = "/datadrive/TUH_EEG/MUPS/data/cross_sub_TUH_EEG/cross_subject_data_test.hdf5"
+    train_val_hd5_location= "/datadrive/TUH_EEG/MUPS/data/cross_sub_TUH_EEG_denoised/cross_subject_data_train_val.hdf5"
+    test_hd5_location = "/datadrive/TUH_EEG/MUPS/data/cross_sub_TUH_EEG_denoised/cross_subject_data_test.hdf5"
     model_type = "eegnet"
     lr = 0.0001
     patience = 20

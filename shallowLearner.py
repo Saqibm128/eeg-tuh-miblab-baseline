@@ -47,12 +47,12 @@ def rf():
 @ex.named_config
 def svc():
     parameters = {
-        'svc__C':[1, 0.5, 1.5, 2, 4,8],
+        'svc__C':[1, 0.5, 2, 4],
         'svc__kernel':['linear', 'rbf', "poly", 'sigmoid'],
-        'svc__gamma':[1,2,3,5,10,20, 'auto', 'scale'],
+        'svc__gamma':['auto', 'scale'],
         'svc__shrinking': [True, False],
         'svc__probability': [True, False],
-        'svc__max_iter': [1000]
+        'svc__max_iter': [1000000]
     }
     # parameters.append(parameters[0].copy())
     # parameters[1]["kernel"] = "poly"
@@ -63,12 +63,12 @@ def svc():
 @ex.named_config
 def xgboost():
     parameters = {
-        "xgboost__max_depth": [2,3,4,5,6,10,12],
-        "xgboost__learning_rate":[0.1,0.2],
+        "xgboost__max_depth": [2,4,10,20],
+        "xgboost__learning_rate":[0.1],
         "xgboost__gamma":[0,0.1,0.2],
         "xgboost__reg_alpha":[0,0.1,0.2],
-        "xgboost__reg_lambda":[0,0.1,0.2,1,2,5],
-        "xgboost__n_estimators":[100,200,300,400,600],
+        "xgboost__reg_lambda":[0,0.1,0.2,1],
+        "xgboost__n_estimators":[300,600,1200],
     }
     clf_name = "xgboost"
     clf_step = (clf_name, xgb.XGBRegressor(objective='binary:logistic',))
@@ -216,7 +216,7 @@ def getGridsearch(valid_indices, clf_step, parameters, n_process, use_random_cv,
         return RandomizedSearchCV(pipeline, parameters, cv=valid_indices,
                             scoring=scorer, n_jobs=n_process, n_iter=num_random_choices)
     return GridSearchCV(pipeline, Dict(parameters), cv=valid_indices,
-                        scoring=scorer, n_jobs=n_process)
+                        scoring=scorer, n_jobs=n_process, verbose=10)
 
 
 @ex.capture
