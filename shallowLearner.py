@@ -71,7 +71,7 @@ def xgboost():
         "xgboost__n_estimators":[300,600,1200],
     }
     clf_name = "xgboost"
-    clf_step = (clf_name, xgb.XGBRegressor(objective='binary:logistic',))
+    clf_step = (clf_name, xgb.XGBRegressor(objective='reg:squarederror',))
     use_xgboost=True
 
 @ex.named_config
