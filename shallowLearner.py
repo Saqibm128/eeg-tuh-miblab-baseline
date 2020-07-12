@@ -47,11 +47,10 @@ def rf():
 @ex.named_config
 def svc():
     parameters = {
-        'svc__C':[1, 0.5, 2, 4],
-        'svc__kernel':['linear', 'rbf', "poly", 'sigmoid'],
+        'svc__C':[1, 0.5, 2],
+        'svc__kernel':['rbf', "poly", 'sigmoid'],
         'svc__gamma':['auto', 'scale'],
-        'svc__shrinking': [True, False],
-        'svc__probability': [True, False],
+        'svc__tol': [0.01], #decrease tolerance to make svm converge
         'svc__max_iter': [1000000]
     }
     # parameters.append(parameters[0].copy())
@@ -63,12 +62,12 @@ def svc():
 @ex.named_config
 def xgboost():
     parameters = {
-        "xgboost__max_depth": [2,4,10,20],
+        "xgboost__max_depth": [4,10,20],
         "xgboost__learning_rate":[0.1],
         "xgboost__gamma":[0,0.1,0.2],
-        "xgboost__reg_alpha":[0,0.1,0.2],
-        "xgboost__reg_lambda":[0,0.1,0.2,1],
-        "xgboost__n_estimators":[300,600,1200],
+        "xgboost__reg_alpha":[0,0.2],
+        "xgboost__reg_lambda":[0,0.2,1],
+        "xgboost__n_estimators":[300,600,900],
     }
     clf_name = "xgboost"
     clf_step = (clf_name, xgb.XGBRegressor(objective='reg:squarederror',))
@@ -231,11 +230,11 @@ def getFeatureScores(gridsearch, clf_name):
 
 @ex.main
 def main(train_pkl, valid_pkl, test_pkl, train_split, num_seconds, imbalanced_resampler, test_split, clf_name, precache, regenerate_data, use_xgboost, num_random_choices=10):
-    
+
     trainXY = pkl.load(open(train_pkl, "rb"))
     validXY = pkl.load(open(valid_pkl, "rb"))
     testXY = pkl.load(open(test_pkl, "rb"))
-    
+
     trainDataResampled = np.array([datum[0] for datum in trainXY])
     validDataResampled = np.array([datum[0] for datum in validXY])
     trainLabelsResampled = np.array([datum[1] for datum in trainXY])
