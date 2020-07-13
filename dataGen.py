@@ -105,7 +105,7 @@ class DataGenerator(keras.utils.Sequence):
 class EdfDataGenerator(DataGenerator):
     'Can accept EdfDataset and any of its intermediates to make data (i.e. sftft)'
     def __init__(self, dataset, mask_value=-10000, labels=None, batch_size=32, dim=(32,32,32), n_channels=1,
-                 n_classes=10, class_type="nominal", use_three_dim_pad=True, shuffle=True, max_length=None, time_first=True, precache=False, xy_tuple_form=True, separate_x_y=False, use_background_process=False):
+                 n_classes=10, class_type="nominal", padding_on_side=0, use_three_dim_pad=True, shuffle=True, max_length=None, time_first=True, precache=False, xy_tuple_form=True, separate_x_y=False, use_background_process=False):
 
         super().__init__(list_IDs=list(range(len(dataset))), labels=labels, batch_size=batch_size, dim=dim, n_channels=n_channels,
                      n_classes=n_classes, shuffle=shuffle)
@@ -120,6 +120,7 @@ class EdfDataGenerator(DataGenerator):
         self.separate_x_y = separate_x_y
         self.xy_tuple_form = xy_tuple_form
         self.class_type=class_type
+        self.padding_on_side=padding_on_side
 
         if precache: #just populate self.labels too if we are precaching anyways
             self.dataset = dataset[:]
@@ -176,7 +177,7 @@ class EdfDataGenerator(DataGenerator):
     def __data_generation(self, list_IDs_temp):
         '''Overriding this to deal with None dimensions (i.e. variable length times)
         and allow for MultiProcessingDataset to work (only works for slices) '''
-       
+
         x, y = self.get_x_y(list_IDs_temp)
         if self.use_three_dim_pad:
             x = three_dim_pad(x, self.mask_value, max_length=self.max_length)
@@ -188,8 +189,12 @@ class EdfDataGenerator(DataGenerator):
             y = y
         elif self.class_type == "custom":
             y = self.transform_y(y)
+        if self.padding_on_side != 0:
+            new_x = np.zeros((len(x),1,22+self.padding_on_side*2, 1000))
+            new_x[:,:,self.padding_on_side:22+self.padding_on_side] = x
+            x = new_x
         return x, np.stack(y)
-    
+
 class RandomRearrangeBatchGenerator(keras.utils.Sequence):
     def __init__(self, dataset, axis=1, dataset_has_epoch_end =True):
         self.dataset = dataset
@@ -206,7 +211,7 @@ class RandomRearrangeBatchGenerator(keras.utils.Sequence):
         return x, y
     def __len__(self):
         return len(self.dataset)
-    
+
 class TransposerBatchGenerator(keras.utils.Sequence):
     def __init__(self, dataset, transpose, dataset_has_epoch_end=True):
         self.dataset = dataset
@@ -219,3 +224,40 @@ class TransposerBatchGenerator(keras.utils.Sequence):
     def on_epoch_end(self):
         if self.dataset_has_epoch_end:
             return self.dataset.on_epoch_end()
+
+class RULEdfDataGenerator(EdfDataGenerator):
+    '''
+    Similar to EdfDataGenerator but runs random under_sampling each run
+    '''
+    def __init__(self, dataset, mask_value=-10000, labels=None, batch_size=32, dim=(32,32,32), n_channels=1,
+                 n_classes=10, class_type="nominal", shuffle=True, max_length=None, time_first=True, precache=False, xy_tuple_form=True, **kwargs):
+        super().__init__(dataset=dataset, mask_value=mask_value, labels=labels, batch_size=batch_size, dim=dim, n_channels=n_channels,
+                     n_classes=n_classes, class_type=class_type, shuffle=shuffle, max_length=max_length, time_first=time_first, precache=precache, xy_tuple_form=xy_tuple_form, **kwargs)
+        self.full_indexes = self.list_IDs
+        self.on_epoch_end()
+    def on_epoch_end(self):
+
+        'Updates indexes after each epoch and balances such that all data is used per epoch'
+        if self.labels is not None:
+            oldIndicesByLabels = Dict()
+            allLabels = Dict()
+            for i in range(len(self.labels)):
+                label = self.labels[i]
+                if label not in oldIndicesByLabels.keys():
+                    oldIndicesByLabels[label] = []
+                    allLabels[label] = 0
+                oldIndicesByLabels[label].append(i)
+                allLabels[label] += 1
+
+            min_label_count = min([allLabels[label] for label in allLabels.keys()])
+            self.list_IDs = []
+            for label in oldIndicesByLabels.keys():
+                oldIndicesByLabels[label] = choice(oldIndicesByLabels[label], size=min_label_count, replace=False)
+                for oldInd in oldIndicesByLabels[label]:
+                    self.list_IDs.append(oldInd)
+
+
+        self.indexes = np.arange(len(self.list_IDs))
+        if self.shuffle == True:
+            np.random.shuffle(self.indexes)
+

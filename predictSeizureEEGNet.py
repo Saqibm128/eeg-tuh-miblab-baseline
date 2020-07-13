@@ -18,6 +18,7 @@ import util_funcs
 import random
 import string
 from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, LearningRateScheduler
+import tensorflow as tf
 
 from time import time
 import h5py
@@ -29,7 +30,7 @@ from dataGen import EdfDataGenerator, RandomRearrangeBatchGenerator
 from addict import Dict
 from tensorflow.keras.optimizers import Adam
 ex = sacred.Experiment(name="seizure_baseline_eegnet_etc")
-ex.observers.append(MongoObserver.create(client=util_funcs.get_mongo_client()))
+# ex.observers.append(MongoObserver.create(client=util_funcs.get_mongo_client()))
 
 @ex.capture
 def trainDataSource(train_val_hd5_location):
@@ -38,10 +39,10 @@ def trainDataSource(train_val_hd5_location):
         train_x = train_x.transpose(0,2,1).reshape((-1,1,22,1000))
         train_y = trainFile['train_y'].value
         return train_x, to_categorical(train_y, 4)
-    
 
-    
-    
+
+
+
 @ex.capture
 def validDataSource(train_val_hd5_location):
     with h5py.File(train_val_hd5_location) as trainFile:
@@ -49,7 +50,7 @@ def validDataSource(train_val_hd5_location):
         train_x = train_x.transpose(0,2,1).reshape((-1,1,22,1000))
         train_y = trainFile['val_y'].value
         return train_x, to_categorical(train_y, 4)
-    
+
 @ex.capture
 def testDataSource(test_hd5_location):
     with h5py.File(test_hd5_location) as testFile:
@@ -57,7 +58,7 @@ def testDataSource(test_hd5_location):
         x = x.transpose(0,2,1).reshape((-1,1,22,1000))
         y = testFile['test_y'].value
         return x, to_categorical(y, 4)
-    
+
 def randomString(stringLength=16):
     """Generate a random string of fixed length """
     letters = string.ascii_uppercase
@@ -73,6 +74,7 @@ def config():
     model_type = "eegnet"
     lr = 0.0001
     patience = 20
+    padding_on_side = 0
     num_epochs = 200
     batch_size=16
     early_stopping_on = "val_loss"
@@ -84,7 +86,7 @@ def config():
 def debug():
     patience = 1
     num_epochs = 1
-    
+
 @ex.capture
 def return_model(model_type, nb_classes, num_channels, time_steps):
     if model_type == "eegnet":
@@ -93,9 +95,11 @@ def return_model(model_type, nb_classes, num_channels, time_steps):
         return ShallowConvNet(nb_classes = nb_classes, Chans = num_channels, Samples = time_steps)
     elif model_type == "deep_eegnet":
         return DeepConvNet(nb_classes = nb_classes, Chans = num_channels, Samples = time_steps)
+    elif model_type == "mobilenet_v2":
+        return tf.keras.applications.MobileNetV2(input_shape = (1, 32,1000), weights=None, classes=4)
     else:
         raise Exception(f"bad model type: {model_type}")
-        
+
 @ex.capture
 def return_compiled_model(lr):
     model = return_model()
@@ -115,7 +119,7 @@ def get_early_stopping(patience, early_stopping_on):
 @ex.capture
 def get_cb_list():
     return [get_model_checkpoint(), get_early_stopping()]
-    
+
 @ex.capture
 def load_best_model(model_name):
     return keras.models.load_model(model_name)
@@ -138,8 +142,8 @@ def valid_generator(batch_size):
     yData = yData.argmax(1)
     return non_random_generator((xData, yData))
 @ex.capture
-def non_random_generator(dataset, batch_size, nb_classes):
-    return EdfDataGenerator(dataset, n_classes=nb_classes, precache=True, use_three_dim_pad=False, xy_tuple_form=False, batch_size=batch_size)
+def non_random_generator(dataset, batch_size, nb_classes, padding_on_side):
+    return EdfDataGenerator(dataset, n_classes=nb_classes, padding_on_side=padding_on_side, precache=True, use_three_dim_pad=False, xy_tuple_form=False, batch_size=batch_size)
 @ex.main
 def main(batch_size, num_epochs, verbose):
     keras.backend.set_image_data_format("channels_first")
@@ -153,7 +157,7 @@ def main(batch_size, num_epochs, verbose):
     results = Dict()
     results.history = history
     test_x, test_y = testDataSource()
-    
+
     model = load_best_model()
     val_predictions = model.predict(valid_x, batch_size=64)
 
@@ -162,7 +166,7 @@ def main(batch_size, num_epochs, verbose):
     results.valid.f1_score.macro =  f1_score(valid_y.argmax(1), val_predictions.argmax(1), average="macro")
     results.valid.f1_score.micro =  f1_score(valid_y.argmax(1), val_predictions.argmax(1), average="micro")
     results.valid.f1_score.weighted =  f1_score(valid_y.argmax(1), val_predictions.argmax(1), average="weighted")
-    
+
 
 
     train_predictions = model.predict(train_x, batch_size=64)
@@ -171,7 +175,7 @@ def main(batch_size, num_epochs, verbose):
     results.train.f1_score.macro =  f1_score(train_y.argmax(1), train_predictions.argmax(1), average="macro")
     results.train.f1_score.micro =  f1_score(train_y.argmax(1), train_predictions.argmax(1), average="micro")
     results.train.f1_score.weighted =  f1_score(train_y.argmax(1), train_predictions.argmax(1), average="weighted")
-    
+
     test_predictions = model.predict(test_x, batch_size=64)
     results.test.classification_report = classification_report(test_y.argmax(1), test_predictions.argmax(1), output_dict=True)
     results.test.confustion_matrix = confusion_matrix(test_y.argmax(1), test_predictions.argmax(1))
